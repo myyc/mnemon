@@ -1,6 +1,6 @@
 from setuptools import setup
 
-from .mnemon._version import __version__
+from mnemon.constants import __version__
 
 DESC = """A simple cache interface for Python objects. Abuse it."""
 
