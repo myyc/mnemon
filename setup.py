@@ -19,5 +19,5 @@ setup(
         "Topic :: Utilities",
         "License :: OSI Approved :: BSD License",
     ],
-    install_requires=["redis"],
+    install_requires=["redis", "appdirs"],
 )
