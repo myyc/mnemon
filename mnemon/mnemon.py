@@ -17,28 +17,31 @@ except ImportError:
 
 
 class MnBackend(MutableMapping):
-    # todo: _pickle = False is a shit idea. think of a sane alternative
-    _pickle = True
-
+    _raw = False
     _expire = None
 
     def _compress(self, value):
-        if self._pickle:
+        if not self._raw:
             value = pickle.dumps(value)
+        elif type(value) is not bytes:
+            if type(value) is str:
+                value = value.encode("utf-8")
+            else:
+                raise TypeError(type(value))
 
         return zlib.compress(value)
 
     def _decompress(self, value):
         value = zlib.decompress(value)
 
-        if self._pickle:
+        if not self._raw:
             value = pickle.loads(value)
 
         return value
 
-    def __init__(self, expire=None, pickle=False):
+    def __init__(self, expire=None, raw=False):
         self._expire = expire
-        self._pickle = pickle
+        self._raw = raw
 
     def __getitem__(self, key):
         pass
@@ -55,7 +58,10 @@ class MnBackend(MutableMapping):
     def __len__(self):
         pass
 
-    def __keytransform__(self, key):
+    @staticmethod
+    def _hash(key):
+        if type(key) is not str:
+            key = str(key)
         return sha256(key.encode("utf-8")).hexdigest()
 
     def __enter__(self):
@@ -68,29 +74,30 @@ class MnBackend(MutableMapping):
 try:
     from redis import StrictRedis
 
+    # noinspection PyAbstractClass
     class MnRedis(MnBackend):
         def __init__(self, host="localhost", port=6379, db=0, expire=None,
-                     pickle=True):
-            super().__init__(expire=expire, pickle=pickle)
+                     raw=False):
+            super().__init__(expire=expire, raw=raw)
             self.d = Redis(host=host, port=port, db=db)
 
         def __getitem__(self, key):
-            return self._decompress(self.d[self.__keytransform__(key)])
+            return self._decompress(self.d[self._hash(key)])
 
         def __setitem__(self, key, value):
-            self.d[self.__keytransform__(key)] = self._compress(value)
+            self.d[self._hash(key)] = self._compress(value)
             if self._expire:
-                self.expire(self.__keytransform__(key), self._expire)
+                self.expire(self._hash(key), self._expire)
 
         def __delitem__(self, key):
-            del self.d[self.__keytransform__(key)]
+            del self.d[self._hash(key)]
 
         def __len__(self):
             # useless
             return len(self.d.keys())
 
         def expire(self, key, secs=86400):
-            self.d.expire(self.__keytransform__(key), secs)
+            self.d.expire(self._hash(key), secs)
 
         def bomb(self):
             return self.d.flushall()
@@ -103,13 +110,14 @@ except ImportError:
             raise ImportError("'redis' not found. Please install it.")
 
 
+# noinspection PyAbstractClass
 class MnFile(MnBackend):
     @staticmethod
     def _perms(path):
         return os.chmod(path, 0o777)
 
-    def __init__(self, cachedir=None, expire=None, pickle=True):
-        super().__init__(expire=expire, pickle=pickle)
+    def __init__(self, cachedir=None, expire=None, raw=False):
+        super().__init__(expire=expire, raw=raw)
         cd = cachedir or appdirs.user_cache_dir(appname="mnemon",
                                                 appauthor="myyc")
         self.path = cd
@@ -131,7 +139,7 @@ class MnFile(MnBackend):
 
     def __contains__(self, key):
         return os.path.exists(os.path.join(self.path, "data",
-                                           self.__keytransform__(key)))
+                                           self._hash(key)))
 
     def __getitem__(self, key):
         if not self.__contains__(key):
@@ -141,7 +149,7 @@ class MnFile(MnBackend):
     def __setitem__(self, key, value):
         if self.__contains__(key):
             del self[key]
-        p = os.path.join(self.path, "data", self.__keytransform__(key))
+        p = os.path.join(self.path, "data", self._hash(key))
         os.mkdir(p)
         self._perms(p)
         with open(os.path.join(p, "key"), "w") as fk:
@@ -154,7 +162,7 @@ class MnFile(MnBackend):
     def __delitem__(self, key):
         if not self.__contains__(key):
             pass
-        p = os.path.join(self.path, "data", self.__keytransform__(key))
+        p = os.path.join(self.path, "data", self._hash(key))
         shutil.rmtree(p)
 
     def __len__(self):
@@ -170,7 +178,7 @@ class MnFile(MnBackend):
                         shutil.rmtree(os.path.join(self.path, "data", f))
 
     def expire(self, key, offset):
-        p = os.path.join(self.path, "data", self.__keytransform__(key))
+        p = os.path.join(self.path, "data", self._hash(key))
         if not os.path.exists(p):
             pass
         with open(os.path.join(p, "expire"), "w") as expfile:
@@ -180,7 +188,7 @@ class MnFile(MnBackend):
     def get(self, key, **kwargs):
         if not self.__contains__(key):
             return None
-        p = os.path.join(self.path, "data", self.__keytransform__(key))
+        p = os.path.join(self.path, "data", self._hash(key))
         with open(os.path.join(p, "data"), "rb") as f:
             v = self._decompress(f.read())
         return v
