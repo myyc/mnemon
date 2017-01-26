@@ -2,7 +2,11 @@ from setuptools import setup
 
 from mnemon.constants import __version__
 
-DESC = """A simple cache interface for Python objects. Abuse it."""
+DESC = """
+A simple cache interface for Python objects.
+
+Source and (minimal) documentation `here <https://github.com/myyc/mnemon/>`_.
+"""
 
 
 setup(
