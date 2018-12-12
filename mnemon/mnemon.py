@@ -198,17 +198,17 @@ class MnFile(MnBackend):
             shutil.rmtree(self.path)
 
 
-def mnemon(be="redis", **kwargs):
-    if be not in {"file", "redis"}:
+def mnemon(be="any", **kwargs):
+    if be not in {"file", "redis", "any"}:
         raise NotImplementedError(be)
 
-    if be == "redis":
+    if be == "redis" or be == "any":
         try:
             rc = MnRedis(**kwargs)
             rc.d.ping()
             return rc
-        except (ImportError, RedisConnectionError):
-            # todo: something not too invasive to point out the 'file' fallback
-            pass
+        except (ImportError, RedisConnectionError) as e:
+            if be == "redis":
+                raise e
 
     return MnFile(**kwargs)
